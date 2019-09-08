@@ -16,5 +16,7 @@
   },
   "private": true,
   "dependencies": {},
-  "devDependencies": {}
+  "devDependencies": {
+    "mkdirp": "~0.5.1"
+  }
 }

@@ -1,0 +1,46 @@
+#!/usr/bin/env node
+
+const path = require('path');
+const mkdirp = require('mkdirp');
+
+function ensureEnv(name) {
+  const result = process.env[name];
+  if (!result) {
+    throw new Error(`Environment variable ${name} is missing or empty!`);
+  }
+
+  return result;
+}
+
+const stag = {
+  uri: ensureEnv('ELMU_DB_STAGING_URI'),
+  db: ensureEnv('ELMU_DB_STAGING_DB')
+};
+
+const prod = {
+  uri: ensureEnv('ELMU_DB_PRODUCTION_URI'),
+  db: ensureEnv('ELMU_DB_PRODUCTION_DB')
+};
+
+const dumpEnv = prod;
+const restoreEnv = stag;
+
+const localDumpDir = path.resolve('./mongodump');
+const containerDumpDir = '/mongodump';
+
+mkdirp.sync(`${localDumpDir}/${dumpEnv.db}`);
+
+const dumpCommandArgs = `--uri ${dumpEnv.uri} --out ${containerDumpDir}`;
+const restoreCommandArgs = `--uri ${dumpEnv.uri} --nsFrom ${dumpEnv.db} --nsTo ${restoreEnv.db} ${containerDumpDir}/${dumpEnv.db}`;
+
+const dockerBuildCommand = 'docker build . -t mongotools';
+const dumpCommand = `docker run --rm -v ${localDumpDir}:${containerDumpDir} mongotools mongodump ${dumpCommandArgs}`;
+const restoreCommand = `docker run --rm -v ${localDumpDir}:${containerDumpDir} mongotools mongorestore ${restoreCommandArgs}`;
+
+console.log('----------------------------------');
+console.log(dockerBuildCommand);
+console.log('----------------------------------');
+console.log(dumpCommand);
+console.log('----------------------------------');
+console.log(restoreCommand);
+console.log('----------------------------------');
