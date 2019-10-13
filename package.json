@@ -17,6 +17,13 @@
   "private": true,
   "dependencies": {},
   "devDependencies": {
-    "mkdirp": "~0.5.1"
+    "any-base": "~1.1.0",
+    "aws-sdk": "~2.548.0",
+    "bcrypt": "~3.0.6",
+    "del": "~5.1.0",
+    "execa": "~2.0.4",
+    "mkdirp": "~0.5.1",
+    "mongodb": "~3.3.2",
+    "uuid": "~3.3.3"
   }
 }

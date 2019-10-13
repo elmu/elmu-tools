@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 
 const path = require('path');
-const mkdirp = require('mkdirp');
+const s3Helper = require('./s3-helper');
+const mongodump = require('./mongodump');
+const { MongoClient } = require('mongodb');
+const userHelper = require('./user-helper');
+const mongoHelper = require('./mongo-helper');
+const { S3, Credentials } = require('aws-sdk');
 
 function ensureEnv(name) {
   const result = process.env[name];
@@ -12,35 +17,77 @@ function ensureEnv(name) {
   return result;
 }
 
+const s3Config = {
+  endpoint: ensureEnv('ELMU_S3_ENDPOINT'),
+  region: ensureEnv('ELMU_S3_REGION'),
+  accessKey: ensureEnv('ELMU_S3_ACCESS_KEY'),
+  secretKey: ensureEnv('ELMU_S3_SECRET_KEY')
+};
+
 const stag = {
-  uri: ensureEnv('ELMU_DB_STAGING_URI'),
-  db: ensureEnv('ELMU_DB_STAGING_DB')
+  dbUri: ensureEnv('ELMU_DB_STAGING_URI'),
+  dbName: ensureEnv('ELMU_DB_STAGING_DB_NAME'),
+  s3BucketName: ensureEnv('ELMU_S3_STAGING_BUCKET_NAME')
 };
 
 const prod = {
-  uri: ensureEnv('ELMU_DB_PRODUCTION_URI'),
-  db: ensureEnv('ELMU_DB_PRODUCTION_DB')
+  dbUri: ensureEnv('ELMU_DB_PRODUCTION_URI'),
+  dbName: ensureEnv('ELMU_DB_PRODUCTION_DB_NAME'),
+  s3BucketName: ensureEnv('ELMU_S3_PRODUCTION_BUCKET_NAME')
 };
 
 const dumpEnv = prod;
 const restoreEnv = stag;
+const dumpDir = path.resolve('.tmp/dump');
 
-const localDumpDir = path.resolve('./mongodump');
-const containerDumpDir = '/mongodump';
+(async () => {
 
-mkdirp.sync(`${localDumpDir}/${dumpEnv.db}`);
+  await mongodump.dump({
+    uri: dumpEnv.dbUri,
+    directory: dumpDir,
+    db: dumpEnv.dbName
+  });
 
-const dumpCommandArgs = `--uri ${dumpEnv.uri} --out ${containerDumpDir}`;
-const restoreCommandArgs = `--uri ${dumpEnv.uri} --nsFrom ${dumpEnv.db} --nsTo ${restoreEnv.db} ${containerDumpDir}/${dumpEnv.db}`;
+  await mongodump.restore({
+    uri: restoreEnv.dbUri,
+    directory: dumpDir,
+    fromDb: dumpEnv.dbName,
+    toDb: restoreEnv.dbName
+  });
 
-const dockerBuildCommand = 'docker build . -t mongotools';
-const dumpCommand = `docker run --rm -v ${localDumpDir}:${containerDumpDir} mongotools mongodump ${dumpCommandArgs}`;
-const restoreCommand = `docker run --rm -v ${localDumpDir}:${containerDumpDir} mongotools mongorestore ${restoreCommandArgs}`;
+  const mongoClient = await MongoClient.connect(restoreEnv.dbUri, { useUnifiedTopology: true, useNewUrlParser: true });
+  const db = mongoClient.db();
+  const users = await db.collection('users');
 
-console.log('----------------------------------');
-console.log(dockerBuildCommand);
-console.log('----------------------------------');
-console.log(dumpCommand);
-console.log('----------------------------------');
-console.log(restoreCommand);
-console.log('----------------------------------');
+  const oldUserIds = (await users.find({}, { projection: { _id: 1 } }).toArray()).map(x => x._id);
+  const newUsers = await userHelper.createTestUsers(oldUserIds);
+
+  await mongoHelper.deleteAllItems(users);
+
+  for (const newUser of newUsers) {
+    console.log(`Creating user ${newUser.username}`);
+    await mongoHelper.upsertItemById(users, newUser);
+  }
+
+  await mongoClient.close();
+
+  const s3 = new S3({
+    apiVersion: '2006-03-01',
+    endpoint: s3Config.endpoint,
+    region: s3Config.region,
+    credentials: new Credentials(s3Config.accessKey, s3Config.secretKey)
+  });
+
+  const oldObjects = await s3Helper.listAllObjects(s3, restoreEnv.s3BucketName);
+  for (const obj of oldObjects) {
+    console.log(`Deleting object ${obj.Key}`);
+    await s3Helper.deleteObject(s3, restoreEnv.s3BucketName, obj.Key);
+  }
+
+  const sourceObjects = await s3Helper.listAllObjects(s3, dumpEnv.s3BucketName);
+  for (const obj of sourceObjects) {
+    console.log(`Copying object ${obj.Key}`);
+    await s3Helper.copyObject(s3, dumpEnv.s3BucketName, obj.Key, restoreEnv.s3BucketName)
+  }
+
+})();
