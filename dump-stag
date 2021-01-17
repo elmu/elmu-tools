@@ -17,7 +17,7 @@ const dumpEnv = {
   dbName: ensureEnv('ELMU_DB_STAGING_DB_NAME')
 };
 
-const dumpDir = path.resolve('.tmp/stag');
+const dumpDir = path.resolve('.tmp/dump');
 
 (async () => {
 
@@ -26,7 +26,5 @@ const dumpDir = path.resolve('.tmp/stag');
     directory: dumpDir,
     db: dumpEnv.dbName
   });
-
-  await mongoClient.close();
 
 })();

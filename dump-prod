@@ -17,7 +17,7 @@ const dumpEnv = {
   dbName: ensureEnv('ELMU_DB_PRODUCTION_DB_NAME')
 };
 
-const dumpDir = path.resolve('.tmp/prod');
+const dumpDir = path.resolve('.tmp/dump');
 
 (async () => {
 
