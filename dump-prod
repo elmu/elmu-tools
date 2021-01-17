@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+
+const path = require('path');
+const mongodump = require('./mongodump');
+
+function ensureEnv(name) {
+  const result = process.env[name];
+  if (!result) {
+    throw new Error(`Environment variable ${name} is missing or empty!`);
+  }
+
+  return result;
+}
+
+const dumpEnv = {
+  dbUri: ensureEnv('ELMU_DB_PRODUCTION_URI'),
+  dbName: ensureEnv('ELMU_DB_PRODUCTION_DB_NAME')
+};
+
+const dumpDir = path.resolve('.tmp/prod');
+
+(async () => {
+
+  await mongodump.dump({
+    uri: dumpEnv.dbUri,
+    directory: dumpDir,
+    db: dumpEnv.dbName
+  });
+
+})();
